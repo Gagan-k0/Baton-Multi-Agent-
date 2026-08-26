@@ -39,6 +39,17 @@ export interface SkillExplain {
   win: string;
 }
 
+/**
+ * Where a skill came from, which decides what may be done to it.
+ *
+ * 'bundled' ships inside the npm package: read-only, never exported (exporting
+ * it would just re-download what npm already delivered) and never deleted.
+ * 'global' and 'imported' are the user's own — both exportable and deletable;
+ * they differ only in reach, and the dashboard groups them together as
+ * "Your skills".
+ */
+export type SkillSource = 'bundled' | 'global' | 'imported';
+
 export interface SkillDef {
   id: string;
   /** Display name. */
@@ -53,7 +64,7 @@ export interface SkillDef {
   body: string;
   /** Supporting files installed alongside the skill (loaded on demand by the agent). */
   references: SkillReference[];
-  source: 'bundled' | 'imported';
+  source: SkillSource;
   /** 3-line human explainer (what / how / win) for the UI. Bundled skills carry
    *  one; imported skills fall back to their description. */
   explain?: SkillExplain;
@@ -111,6 +122,10 @@ const BUNDLED_META: Record<string, { tags: string[]; produces: string[] }> = {
     tags: ['lean', 'restraint', 'over-engineering', 'yagni', 'simplicity', 'minimal', 'reuse', 'stdlib', 'native', 'one-liner', 'ponytail'],
     produces: ['restraint ladder', 'smallest working diff', 'reuse over rewrite', 'safety carve-outs preserved'],
   },
+  'dispatch-plan': {
+    tags: ['plan', 'dispatch', 'parallel', 'multi-agent', 'fan-out', 'worktree', 'assign', 'assignee', 'routing', 'phase', 'scope', 'split', 'delegate', 'antigravity', 'codex', 'cursor', 'approve', 'orchestrate', 'coordinate'],
+    produces: ['a validated plan file', 'phase + dependency layout', 'per-task scope and acceptance criteria', 'an approval a human gives', 'parallel worktrees'],
+  },
   'stack-migration': {
     tags: ['migrate', 'migration', 'port', 'convert', 'rewrite', 'angular', 'react', 'next.js', 'nextjs', 'vue', 'nestjs', 'express', 'framework', 'stack', 'phase', 'parity', 'endpoints', 'components', 'dry', 'reuse', 'resumable', 'ledger', 'parallel', 'multi-agent', 'fan-out', 'worktree', 'cursor', 'codex', 'antigravity', 'handoff'],
     produces: ['codebase inventory', 'ordered phase plan', 'MIGRATION.md ledger', 'reuse index', 'per-phase parity re-verify', '95% skeptic gate', 'auto-commit per phase (never pushes)', 'parallel fan-out plan + per-phase HANDOFF briefs'],
@@ -130,6 +145,11 @@ const SKILL_EXPLAIN: Record<string, SkillExplain> = {
     what: 'A gated pipeline for fixing bugs without creating new ones.',
     how: 'Reproduce → audit blast radius → hypothesis-driven root cause → 95% skeptic-checked plan → fix → re-verify.',
     win: 'No duplicate fixes, no symptom patches, no regressions shipped.',
+  },
+  'dispatch-plan': {
+    what: 'Splits big work into a plan several agents can run at once, in separate worktrees.',
+    how: 'Phases and `after:` for order, scope globs to keep agents apart, `@agent` to assign — then a human approves.',
+    win: 'Parallel work with no collisions, and no agent ever starts paid processes on its own say-so.',
   },
   'lean-code': {
     what: 'The anti-over-engineering reflex (Ponytail’s "lazy senior dev" discipline).',

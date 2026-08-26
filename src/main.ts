@@ -56,9 +56,19 @@ import { guardCmd } from './commands/guard.js';
 import { snapshotCmd } from './commands/snapshot.js';
 import { orientCmd } from './commands/orient.js';
 import { progressCmd } from './commands/progress.js';
-import { skillsListCmd, skillsInstallCmd, skillsUninstallCmd, skillsImportCmd } from './commands/skills.js';
+import { skillsListCmd, skillsInstallCmd, skillsUninstallCmd, skillsImportCmd, skillsRemoveCmd, skillsExportCmd, skillsRestoreCmd, skillsBookmarkCmd, skillsUpdateCmd } from './commands/skills.js';
 import { bugsCmd } from './commands/bugs.js';
 import { planApplyCmd, planCheckCmd, PLANS_DIR } from './commands/plan.js';
+import { dispatchCmd, planApproveCmd, type DispatchOpts } from './commands/dispatch.js';
+import {
+  endpointsGrantCmd,
+  endpointsGrantsCmd,
+  endpointsPreviewCmd,
+  endpointsUseCmd,
+  endpointsRefreshCmd,
+  endpointsRevokeGrantCmd,
+  endpointsStatusCmd,
+} from './commands/endpoints.js';
 import { taskAddCmd, taskRmCmd, type TaskAddOpts } from './commands/task.js';
 import { nextCmd } from './commands/next.js';
 import { blockCmd, pauseCmd } from './commands/pause.js';
@@ -369,7 +379,7 @@ memory
 
 const skills = program
   .command('skills')
-  .description('reusable agent skills: install the bundled playbooks into your agents');
+  .description('reusable agent skills: Baton\'s bundled playbooks plus your own library in ~/.baton/skills');
 
 skills
   .command('list', { isDefault: true })
@@ -387,15 +397,52 @@ skills
 skills
   .command('uninstall')
   .argument('<id>', 'skill id')
-  .option('--agent <agent>', 'remove from just one agent (default: all)')
-  .description('remove an installed skill from your agents')
+  .option('--agent <agent>', 'unwire from just one agent (default: all)')
+  .description('unwire a skill from your agents — the skill stays in your library')
   .action((id: string, opts: { agent?: string }) => run(() => skillsUninstallCmd(id, opts)));
 
 skills
   .command('import')
   .argument('<source>', 'a file path or http(s) URL to a SKILL.md')
-  .description('import a skill from a path or URL into the catalog')
-  .action((source: string) => run(() => skillsImportCmd(source)));
+  .option('--as <shortcut>', 'the shortcut agents invoke it by (default: its frontmatter name)')
+  .option('--replace', 'overwrite a skill of yours that already has this shortcut')
+  .description('add a skill from a path or URL to your library (~/.baton/skills)')
+  .action((source: string, opts: { as?: string; replace?: boolean }) => run(() => skillsImportCmd(source, opts)));
+
+skills
+  .command('remove')
+  .argument('<id>', 'skill id (see `baton skills list`)')
+  .option('--yes', 'skip the confirmation (required when not run from a terminal)')
+  .description('DELETE one of your own skills for good — export it first if you might want it back')
+  .action((id: string, opts: { yes?: boolean }) => run(() => skillsRemoveCmd(id, opts)));
+
+
+skills
+  .command('update')
+  .argument('[id]', 'the skill to re-fetch; omit with --all')
+  .option('--all', 'update every skill of yours that came from a URL')
+  .option('--force', 'overwrite local edits')
+  .description('re-fetch a skill from where it came from (refuses if you have edited it)')
+  .action((id: string | undefined, opts: { all?: boolean; force?: boolean }) => run(() => skillsUpdateCmd(id, opts)));
+skills
+  .command('bookmark')
+  .argument('<id>', 'skill id (see `baton skills list`)')
+  .option('--remove', 'unpin it instead')
+  .description('pin a skill to the top of the list')
+  .action((id: string, opts: { remove?: boolean }) => run(() => skillsBookmarkCmd(id, opts)));
+
+skills
+  .command('export')
+  .option('--out <file>', 'write to a file instead of stdout')
+  .description("export your own skills as one restorable bundle (Baton's bundled skills are not included)")
+  .action((opts: { out?: string }) => run(() => skillsExportCmd(opts)));
+
+skills
+  .command('restore')
+  .argument('<file>', 'a bundle written by `baton skills export`')
+  .option('--replace', 'overwrite skills you already have')
+  .description('restore an exported skill library onto this machine')
+  .action((file: string, opts: { replace?: boolean }) => run(() => skillsRestoreCmd(file, opts)));
 
 program
   .command('bugs')
@@ -629,7 +676,7 @@ task
 
 const plan = program
   .command('plan')
-  .description(`phased task plans written as markdown in ${PLANS_DIR}/: check, apply`);
+  .description(`phased task plans written as markdown in ${PLANS_DIR}/: check, apply, approve`);
 
 plan
   .command('check')
@@ -644,6 +691,70 @@ plan
   .option('--force', 'proceed even when the change lands under a working agent')
   .description('turn a plan into queued tasks — shows the diff first, refuses in-flight changes')
   .action((file: string, opts: { dryRun?: boolean; force?: boolean }) => run(() => planApplyCmd(file, opts)));
+
+plan
+  .command('approve')
+  .argument('<file>', `plan name (looked up in ${PLANS_DIR}/) or a path to a .md file`)
+  .option('--agent <id>', 'resolve every task to this agent instead')
+  .option('--backend <id>', 'local | orca')
+  .description('show exactly what dispatch would launch, then record that you read it')
+  .action((file: string, opts: DispatchOpts) => run(() => planApproveCmd(file, opts)));
+
+program
+  .command('dispatch')
+  .argument('<file>', `plan name (looked up in ${PLANS_DIR}/) or a path to a .md file`)
+  .option('--dry-run', 'resolve everything, claim nothing, start nothing')
+  .option('--max <n>', 'start at most N agents this run')
+  .option('--agent <id>', 'override the plan and route every task to this agent')
+  .option('--backend <id>', 'local | orca')
+  .option('--yes', 'approve this exact plan as part of dispatching it')
+  .option('--allow-paid-fallback', 'if a self-hosted endpoint is down, allow the chain to fall through to a model that costs money (off by default; every promotion is named)')
+  .description('claim, brief and launch every startable task in an approved plan')
+  .action((file: string, opts: DispatchOpts) => run(() => dispatchCmd(file, opts)));
+
+const endpoints = program
+  .command('endpoints')
+  .description('your own model servers: what they serve, and whether using them keeps code on your network');
+
+endpoints
+  .command('status')
+  .description('per endpoint: reachable, models served, and the egress class of each')
+  .action(() => run(() => endpointsStatusCmd()));
+
+endpoints
+  .command('refresh')
+  .description("re-pull the company's endpoints from your host; your own are left alone")
+  .action(() => run(() => endpointsRefreshCmd()));
+
+endpoints
+  .command('grant <member> <model>')
+  .description('let one person use a model that leaves your network')
+  .option('--endpoint <id>', 'which endpoint, when more than one serves the model')
+  .action((member: string, model: string, opts: { endpoint?: string }) =>
+    run(() => endpointsGrantCmd(member, model, opts)));
+
+endpoints
+  .command('revoke <member> <model>')
+  .description('take that back; work already running finishes on the model it started with')
+  .option('--endpoint <id>', 'which endpoint, when more than one serves the model')
+  .action((member: string, model: string, opts: { endpoint?: string }) =>
+    run(() => endpointsRevokeGrantCmd(member, model, opts)));
+
+endpoints
+  .command('preview <agent>')
+  .description('exactly what launching this agent would set — endpoint, egress, variables')
+  .option('--model <model>', 'the model it would be launched with')
+  .action((agent: string, opts: { model?: string }) => run(() => endpointsPreviewCmd(agent, opts)));
+
+endpoints
+  .command('use <agent> <mode>')
+  .description("point one agent at 'vendor' (its own key) or 'gateway' (your own models)")
+  .action((agent: string, mode: string) => run(() => endpointsUseCmd(agent, mode)));
+
+endpoints
+  .command('grants')
+  .description('who may send code off your network, and to which model')
+  .action(() => run(() => endpointsGrantsCmd()));
 
 const review = program
   .command('review')

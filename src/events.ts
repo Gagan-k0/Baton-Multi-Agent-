@@ -11,6 +11,8 @@
 import { EventEmitter } from 'node:events';
 import type { StatusRow } from './board.js';
 
+import type { EndpointStatusRow } from './endpoints/status.js';
+
 export type BatonEvent =
   | { type: 'status.changed'; rows: StatusRow[] }
   | { type: 'task.created'; slug: string; task: string }
@@ -18,14 +20,29 @@ export type BatonEvent =
   | { type: 'task.merged'; slug: string; report?: unknown }
   | { type: 'commit.created'; slug: string; sha: string; message: string }
   | { type: 'agent.started'; slug: string; agent: string }
+  /** A dispatcher-launched agent. `source` is why this agent and not another —
+   *  a flag, the plan's `@agent`, or the routing chain. */
+  | { type: 'dispatch.started'; slug: string; agent: string; source: 'flag' | 'plan' | 'routing' }
   | { type: 'agent.stopped'; slug: string; agent: string }
   | { type: 'agent.output'; slug: string; line: string; stream: 'out' | 'err' }
   | { type: 'file.edited'; slug: string; path: string; at: string }
   | { type: 'signal.overlap'; path: string; slugs: string[] }
   | { type: 'kb.rebuilt'; project: string }
+  // One poller, one snapshot, fanned out here: a viewer never triggers an
+  // upstream call, so the 201st viewer costs the gateway nothing (D5).
+  //
+  // NOT published yet, and deliberately so: `endpointsStatus()` answers reads
+  // and publishing from there made a read/event/read loop. The poller that owns
+  // the usage feed will publish it. Declared now because it is the wire
+  // contract D5 specified, and clients already fan out on it.
+  | { type: 'endpoints.status'; rows: EndpointStatusRow[] }
   | { type: 'handoff.created'; slug: string; toAgent: string }
   | { type: 'agent.connected'; agent: string }
   | { type: 'skill.installed'; skill: string; agent: string }
+  /** A skill entered or left the user's library. Distinct from skill.installed,
+   *  which is about wiring an existing skill into one agent. */
+  | { type: 'skill.imported'; skill: string }
+  | { type: 'skill.removed'; skill: string }
   | { type: 'junk.cleaned'; count: number }
   /** A code review was recorded. Per-axis counts only — the axes are separate
    *  by design, so no combined total rides on the event. */
